@@ -1,7 +1,10 @@
 import random
 from datetime import datetime, timedelta
+import argparse
+import os
 
 def generate_sample_nem12(filename, nmi_count=5, days=30):
+    print(f"Generating sample NEM12 data: {filename} with {nmi_count} NMIs for {days} days each.")
     with open(filename, 'w') as f:
         # 100 Header
         f.write(f"100,NEM12,{datetime.now().strftime('%Y%m%d%H%M')},GEN_TOOL,LOCAL\n")
@@ -24,5 +27,17 @@ def generate_sample_nem12(filename, nmi_count=5, days=30):
         
         # 900 Footer
         f.write("900\n")
+        print("Sample NEM12 data generation complete.")
 
-generate_sample_nem12("../test_load.csv", nmi_count=10, days=365)
+def parse_args():
+    p = argparse.ArgumentParser(description="generate sample NEM12 load data")
+    p.add_argument('--nmi_count', type=int, default=5, help='NMI 数量（默认为 5）')
+    p.add_argument('--days', type=int, default=30, help='每个 NMI 的天数（默认为 30）')
+    p.add_argument('--output', '-o', type=str, default='../test_load.csv', help='输出文件路径（默认为 ../test_load.csv）')
+    return p.parse_args()
+
+if __name__ == "__main__":
+    args = parse_args()
+    min_count = max(1, args.nmi_count)
+    days = max(1, args.days)
+    generate_sample_nem12(args.output, nmi_count=min_count, days=days)
