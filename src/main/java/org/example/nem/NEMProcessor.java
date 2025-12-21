@@ -6,7 +6,7 @@ import com.univocity.parsers.csv.CsvParser;
 import org.example.nem.constant.ErrorType;
 import org.example.nem.data.ErrorRecord;
 import org.example.nem.data.MeterReading;
-import org.example.nem.factory.NEMProcessorFactor;
+import org.example.nem.factory.NEMProcessorFactory;
 import org.example.nem.writer.NEMErrorWriter;
 import org.example.nem.writer.NEMWriter;
 
@@ -46,7 +46,7 @@ public class NEMProcessor {
         }
     }
 
-    class MeterBufferWriter {
+    static class MeterBufferWriter {
         Collection<MeterReading> readings;
         NEMWriter writer;
         private int bufferSize;
@@ -72,49 +72,58 @@ public class NEMProcessor {
         }
     }
 
-    private static final int BATCH_SIZE = 200;
-    private static final int OneDayMinutes = 24 * 60;
+    static class RuntimeState {
+        String nmi = "";
+        int interval = 0;
+        String inputFileName = "";
+        int currentLineCnt = 0;
+    }
 
-    private MeterBufferWriter valueBuffer;
-    private String nmi = "";
-    private int interval = 0;
-    private String inputFileName = "";
-    private int currentLineCnt = 0;
+    private static final int BATCH_SIZE = 200;
+    private static final int ONE_DAY_MINUTES = 24 * 60;
+
 
     public NEMProcessor() {
     }
 
-    public void process(String inputName, NEMProcessorFactor factor) throws IOException {
+    public void process(String inputName, NEMProcessorFactory factor) throws IOException {
         CsvParserSettings settings = new CsvParserSettings();
         settings.getFormat().setLineSeparator("\n");
         settings.setIgnoreLeadingWhitespaces(true);
         settings.setIgnoreTrailingWhitespaces(true);
         CsvParser parser = new CsvParser(settings);
-        currentLineCnt = 0;
-        inputFileName = inputName;
+        RuntimeState rs = new RuntimeState();
+        rs.inputFileName = inputName;
+        rs.nmi = "";
+        rs.interval = 0;
+        rs.currentLineCnt = 0;
         try (BufferedReader reader = new BufferedReader(new FileReader(inputName, StandardCharsets.UTF_8));
              NEMWriter outputWriter = factor.createNEMWriter(inputName);
              NEMErrorWriter errorWriter = factor.createNEMErrorWriter(inputName)
         ) {
-            valueBuffer = new MeterBufferWriter(BATCH_SIZE, outputWriter);
+            MeterBufferWriter valueBuffer = new MeterBufferWriter(BATCH_SIZE, outputWriter);
             parser.beginParsing(reader);
             String[] row;
             while (true) {
                 try {
                     row = parser.parseNext();
                 } catch (Exception ex) {
-                    currentLineCnt++;
-                    errorRecord(currentLineCnt, ErrorType.Parse_Error, errorWriter);
+                    rs.currentLineCnt++;
+                    errorRecord(rs, ErrorType.Parse_Error, errorWriter);
                     continue;
                 }
                 if (row == null) {
                     break;
                 }
-                currentLineCnt++;
+                rs.currentLineCnt++;
+                List<MeterReading> readings = rowProcess(row, rs, errorWriter);
                 try {
-                    valueBuffer.add(rowProcess(row, currentLineCnt, errorWriter));
+                    valueBuffer.add(readings);
                 } catch (IOException ex) {
-                    errorRecord(currentLineCnt, ErrorType.Unknown_Error, errorWriter);
+                    String errMsg = String.format("Error writing meter readings at FileName: %s, line %d~%d: %s",
+                            rs.inputFileName, rs.currentLineCnt - readings.size(), rs.currentLineCnt, ex.getMessage());
+                    System.err.println(errMsg);
+                    throw ex;
                 }
             }
             valueBuffer.flush();
@@ -127,89 +136,95 @@ public class NEMProcessor {
         }
     }
 
-    List<MeterReading> rowProcess(String[] row, int currentLineCnt, NEMErrorWriter errorWriter) {
+    List<MeterReading> rowProcess(String[] row, RuntimeState rs, NEMErrorWriter errorWriter) {
         if (row.length == 0) {
             return List.of();
         }
         String indicator = row[0];
         RowType type = RowType.codeOf(indicator);
         if (type == null) {
-            errorRecord(currentLineCnt, ErrorType.Invalid_RowType, errorWriter);
+            errorRecord(rs, ErrorType.Invalid_RowType, errorWriter);
             return List.of();
         }
         switch (type) {
             case Begin, Quality_Indicator, Trailing_Comments, End -> {
                 // skip
             }
-            case NMI_Details -> processNMIBaseInfo(row, currentLineCnt, errorWriter);
+            case NMI_Details -> processNMIBaseInfo(row, rs, errorWriter);
             case Consumption_Data -> {
-                return processConsumptionData(row, currentLineCnt, errorWriter);
+                return processConsumptionData(row, rs, errorWriter);
             }
         }
         return List.of();
     }
 
-    void processNMIBaseInfo(String[] row, int currentLineCnt, NEMErrorWriter errorWriter) {
-        nmi = "";
-        interval = 0;
-        if (row.length < 9) {
-            errorRecord(currentLineCnt, ErrorType.Invalid_NMI_Info, errorWriter);
+    private final int NMI_Details_Min_Len = 9;
+
+    void processNMIBaseInfo(String[] row, RuntimeState rs, NEMErrorWriter errorWriter) {
+        rs.nmi = "";
+        rs.interval = 0;
+        if (row.length < NMI_Details_Min_Len) {
+            errorRecord(rs, ErrorType.Invalid_NMI_Info, errorWriter);
             return;
         }
-        nmi = row[1];
+        if (row[1] == null || row[1].isEmpty() || row[1].contains("'")) {
+            errorRecord(rs, ErrorType.Invalid_NMI_Info, errorWriter);
+            return;
+        }
+        rs.nmi = row[1];
         try {
-            interval = Integer.parseInt(row[8]);
+            rs.interval = Integer.parseInt(row[8]);
         } catch (NumberFormatException ex) {
-            errorRecord(currentLineCnt, ErrorType.Invalid_NMI_Info, errorWriter);
+            errorRecord(rs, ErrorType.Invalid_NMI_Info, errorWriter);
             return;
         }
-        if (interval <= 0 || OneDayMinutes % interval != 0) {
-            errorRecord(currentLineCnt, ErrorType.Invalid_NMI_Info, errorWriter);
+        if (rs.interval <= 0 || ONE_DAY_MINUTES % rs.interval != 0) {
+            errorRecord(rs, ErrorType.Invalid_NMI_Info, errorWriter);
         }
     }
 
-    private final int MNI_Data_Suffix_Len_MIN = 4;
-    private final int MNI_Data_Min_Len = 3 + MNI_Data_Suffix_Len_MIN;
+    private final int NMI_Data_Suffix_Len_MIN = 4;
+    private final int NMI_Data_Min_Len = 3 + NMI_Data_Suffix_Len_MIN;
     private final Set<String> QualityFlags = Set.of("A", "E", "S", "F", "V", "N");
 
-    List<MeterReading> processConsumptionData(String[] row, int currentLineCnt, NEMErrorWriter errorWriter) {
+    List<MeterReading> processConsumptionData(String[] row, RuntimeState rs, NEMErrorWriter errorWriter) {
         List<MeterReading> ret = new ArrayList<>();
-        if ("".equals(nmi) || interval <= 0) {
-            errorRecord(currentLineCnt, ErrorType.NMI_Missing, errorWriter);
+        if (rs.nmi == null || rs.nmi.isEmpty() || rs.interval <= 0) {
+            errorRecord(rs, ErrorType.NMI_Missing, errorWriter);
             return ret;
         }
-        if (row.length < MNI_Data_Min_Len) {
-            errorRecord(currentLineCnt, ErrorType.No_Consumption_Data, errorWriter);
+        if (row.length < NMI_Data_Min_Len) {
+            errorRecord(rs, ErrorType.No_Consumption_Data, errorWriter);
             return ret;
         }
         String dateStr = row[1];
         LocalDateTime baseTime = LocalDateTime.parse(dateStr + "0000",
                 DateTimeFormatter.ofPattern("yyyyMMddHHmm"));
-        int pointsCount = OneDayMinutes / interval;
+        int pointsCount = ONE_DAY_MINUTES / rs.interval;
         int startIdx = 2;
         int qualityFlagIndex = startIdx + pointsCount;
         if (row.length < qualityFlagIndex + 1 || !QualityFlags.contains(row[qualityFlagIndex])) {
-            errorRecord(currentLineCnt, ErrorType.Freq_Mismatch, errorWriter);
+            errorRecord(rs, ErrorType.Freq_Mismatch, errorWriter);
             return ret;
         }
         for (int i = 0; i < pointsCount; i++) {
             String consumption = row[startIdx + i];
             //cal timestamp
-            LocalDateTime ts = baseTime.plusMinutes((long) (i + 1) * interval);
+            LocalDateTime ts = baseTime.plusMinutes((long) (i + 1) * rs.interval);
             double consumptionValue;
             try {
                 consumptionValue = Double.parseDouble(consumption);
             } catch (NumberFormatException ex) {
-                errorRecord(currentLineCnt, ErrorType.Invalid_Consumption_Value, errorWriter);
+                errorRecord(rs, ErrorType.Invalid_Consumption_Value, errorWriter);
                 return List.of();
             }
-            ret.add(new MeterReading(nmi, ts, consumptionValue));
+            ret.add(new MeterReading(rs.nmi, ts, consumptionValue));
         }
         return ret;
     }
 
-    private void errorRecord(int lineCount, ErrorType errorType, NEMErrorWriter errOutput) {
-        errOutput.writeErrors(new ErrorRecord(inputFileName, lineCount, errorType));
+    private void errorRecord(RuntimeState rs, ErrorType errorType, NEMErrorWriter errOutput) {
+        errOutput.writeErrors(new ErrorRecord(rs.inputFileName, rs.currentLineCnt, errorType));
     }
 }
 

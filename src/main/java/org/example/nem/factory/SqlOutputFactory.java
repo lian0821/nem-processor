@@ -8,7 +8,7 @@ import org.example.nem.writer.StdErrorWriter;
 import java.io.BufferedWriter;
 import java.io.FileWriter;
 
-public class SqlOutputFactory implements NEMProcessorFactor {
+public class SqlOutputFactory implements NEMProcessorFactory {
 
     @Override
     public NEMWriter createNEMWriter(String inputFile) {

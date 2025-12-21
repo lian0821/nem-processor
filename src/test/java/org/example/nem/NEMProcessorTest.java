@@ -3,7 +3,7 @@ package org.example.nem;
 import org.example.nem.constant.ErrorType;
 import org.example.nem.data.ErrorRecord;
 import org.example.nem.data.MeterReading;
-import org.example.nem.factory.NEMProcessorFactor;
+import org.example.nem.factory.NEMProcessorFactory;
 import org.example.nem.writer.DBSupport;
 import org.example.nem.writer.NEMErrorWriter;
 import org.example.nem.writer.NEMJdbcWriter;
@@ -21,7 +21,7 @@ import static org.junit.jupiter.api.Assertions.fail;
 class NEMProcessorTest {
 
     @Test
-    void TestProcessWithJdbcWriter() {
+    void processWithJdbcWriter() {
         DataSource ds = DBSupport.createDataSource();
         try {
             DBSupport.createTable(ds);
@@ -29,7 +29,7 @@ class NEMProcessorTest {
             fail("Failed to create table: " + e.getMessage());
         }
         NEMProcessor processor = new NEMProcessor();
-        NEMProcessorFactor factor = new NEMProcessorFactor() {
+        NEMProcessorFactory factory = new NEMProcessorFactory() {
             @Override
             public NEMWriter createNEMWriter(String inputFile) {
                 return new NEMJdbcWriter(ds);
@@ -41,7 +41,7 @@ class NEMProcessorTest {
             }
         };
         try {
-            processor.process("src/test/resources/nem_sample.csv", factor);
+            processor.process("src/test/resources/nem_sample.csv", factory);
         } catch (IOException e) {
             fail("IOException thrown during processing: " + e.getMessage());
         }
@@ -68,12 +68,13 @@ class NEMProcessorTest {
                 "300,20050301,0,0,0,0,0,0,0,0,0,0,0,0,0.461,0.810,0.568,1.234,1.353,1.507,1.344,1.773,0.848,1.271,0.895,1.327,1.013,1.793,0.988,0.985,0.876,0.555,0.760,0.938,0.566,0.512,0.970,0.760,0.731,0.615,0.886,0.531,0.774,0.712,0.598,0.670,0.587,0.657,0.345,0.231,A,,,20050310121004,20050310182204"
         };
         NEMProcessor processor = new NEMProcessor();
-        NEMProcessorFactor factor = new MockNEMProcessorFactory();
-        NEMErrorWriter errorWriter = factor.createNEMErrorWriter("");
+        NEMProcessorFactory factory = new MockNEMProcessorFactory();
+        NEMErrorWriter errorWriter = factory.createNEMErrorWriter("");
         NEMWriterMock nemWriter = new NEMWriterMock();
+        NEMProcessor.RuntimeState rs = new NEMProcessor.RuntimeState();
         for (String row : testData) {
             String[] columns = row.split(",");
-            nemWriter.write(processor.rowProcess(columns, 0, errorWriter));
+            nemWriter.write(processor.rowProcess(columns, rs, errorWriter));
         }
         Assertions.assertEquals(2, ((NEMErrorWriterMock) errorWriter).errorRecords.size());
         Assertions.assertEquals(48, nemWriter.writtenReadings.size());
@@ -92,17 +93,17 @@ class NEMProcessorTest {
                 "200,NEM1201009,E1E2,1,E1,N1,01009,kWh,30,20050610",
                 "200,NEM1201009,E1E2,2,E1,N1,01009,kWh,15,20050610,20050611,10,AB"
         );
-        NEMProcessorFactor factor = new MockNEMProcessorFactory();
+        NEMProcessorFactory factory = new MockNEMProcessorFactory();
         for (String row : errorTestData) {
             String[] columns = row.split(",");
-            NEMErrorWriter errorWriter = factor.createNEMErrorWriter("");
-            processor.processNMIBaseInfo(columns, 0, errorWriter);
+            NEMErrorWriter errorWriter = factory.createNEMErrorWriter("");
+            processor.processNMIBaseInfo(columns, new NEMProcessor.RuntimeState(), errorWriter);
             Assertions.assertEquals(1, ((NEMErrorWriterMock) errorWriter).errorRecords.size());
         }
         for (String row : validTestData) {
             String[] columns = row.split(",");
-            NEMErrorWriter errorWriter = factor.createNEMErrorWriter("");
-            processor.processNMIBaseInfo(columns, 0, errorWriter);
+            NEMErrorWriter errorWriter = factory.createNEMErrorWriter("");
+            processor.processNMIBaseInfo(columns, new NEMProcessor.RuntimeState(), errorWriter);
             Assertions.assertEquals(0, ((NEMErrorWriterMock) errorWriter).errorRecords.size());
         }
     }
@@ -110,11 +111,12 @@ class NEMProcessorTest {
     @Test
     void processConsumptionDataWithIllegalNEMInfo() {
         NEMProcessor processor = new NEMProcessor();
-        NEMProcessorFactor factor = new MockNEMProcessorFactory();
+        NEMProcessorFactory factory = new MockNEMProcessorFactory();
         String row = "300,20050301,0,0,0,0,0,0,0,0,0,0,0,0,0.461,0.810,0.568,1.234,1.353,1.507,1.344,1.773,0.848,1.271,0.895,1.327,1.013,1.793,0.988,0.985,0.876,0.555,0.760,0.938,0.566,0.512,0.970,0.760,0.731,0.615,0.886,0.531,0.774,0.712,0.598,0.670,0.587,0.657,0.345,0.231,A,,,20050310121004,20050310182204";
         String[] columns = row.split(",");
-        NEMErrorWriter errorWriter = factor.createNEMErrorWriter("");
-        List<MeterReading> ret = processor.processConsumptionData(columns, 0, errorWriter);
+        NEMErrorWriter errorWriter = factory.createNEMErrorWriter("");
+        NEMProcessor.RuntimeState rs = new NEMProcessor.RuntimeState();
+        List<MeterReading> ret = processor.processConsumptionData(columns, rs, errorWriter);
         Assertions.assertEquals(0, ret.size());
         Assertions.assertEquals(1, ((NEMErrorWriterMock) errorWriter).errorRecords.size());
         Assertions.assertEquals(ErrorType.NMI_Missing, ((NEMErrorWriterMock) errorWriter).errorRecords.get(0).errorType());
@@ -123,10 +125,11 @@ class NEMProcessorTest {
     @Test
     void processConsumptionData() {
         NEMProcessor processor = new NEMProcessor();
-        NEMProcessorFactor factor = new MockNEMProcessorFactory();
+        NEMProcessorFactory factory = new MockNEMProcessorFactory();
+        NEMProcessor.RuntimeState rs = new NEMProcessor.RuntimeState();
         String validBaseInfoRow = "200,NEM1201009,E1E2,1,E1,N1,01009,kWh,30,20050610";
         String[] baseInfoColumns = validBaseInfoRow.split(",");
-        processor.processNMIBaseInfo(baseInfoColumns, 0, factor.createNEMErrorWriter(""));
+        processor.processNMIBaseInfo(baseInfoColumns, rs, factory.createNEMErrorWriter(""));
         Map<String, ErrorType> errorTestData = Map.of(
                 // < min_len
                 "300,20050301", ErrorType.No_Consumption_Data,
@@ -140,22 +143,22 @@ class NEMProcessorTest {
         );
         for (Map.Entry<String, ErrorType> entry : errorTestData.entrySet()) {
             String[] columns = entry.getKey().split(",");
-            NEMErrorWriter errorWriter = factor.createNEMErrorWriter("");
-            List<MeterReading> ret = processor.processConsumptionData(columns, 0, errorWriter);
+            NEMErrorWriter errorWriter = factory.createNEMErrorWriter("");
+            List<MeterReading> ret = processor.processConsumptionData(columns, rs, errorWriter);
             Assertions.assertEquals(0, ret.size());
             Assertions.assertEquals(1, ((NEMErrorWriterMock) errorWriter).errorRecords.size());
             Assertions.assertEquals(entry.getValue(), ((NEMErrorWriterMock) errorWriter).errorRecords.get(0).errorType());
         }
         for (String row : validTestData) {
             String[] columns = row.split(",");
-            NEMErrorWriter errorWriter = factor.createNEMErrorWriter("");
-            List<MeterReading> ret = processor.processConsumptionData(columns, 0, errorWriter);
+            NEMErrorWriter errorWriter = factory.createNEMErrorWriter("");
+            List<MeterReading> ret = processor.processConsumptionData(columns, rs, errorWriter);
             Assertions.assertEquals(48, ret.size());
             Assertions.assertEquals(0, ((NEMErrorWriterMock) errorWriter).errorRecords.size());
         }
     }
 
-    class MockNEMProcessorFactory implements NEMProcessorFactor {
+    static class MockNEMProcessorFactory implements NEMProcessorFactory {
 
         @Override
         public NEMWriter createNEMWriter(String inputFile) {
@@ -168,7 +171,7 @@ class NEMProcessorTest {
         }
     }
 
-    class NEMWriterMock implements NEMWriter {
+    static class NEMWriterMock implements NEMWriter {
 
         private List<MeterReading> writtenReadings = new ArrayList<>();
 
@@ -183,7 +186,7 @@ class NEMProcessorTest {
         }
     }
 
-    class NEMErrorWriterMock implements NEMErrorWriter {
+    static class NEMErrorWriterMock implements NEMErrorWriter {
 
         private List<ErrorRecord> errorRecords = new ArrayList<>();
 

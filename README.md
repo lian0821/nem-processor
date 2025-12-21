@@ -16,7 +16,7 @@ A high-performance NEM12 (Meter Data File Format) parser designed for large-scal
    ```
 2. execute mvn (.sql output under src/main/resources/):
    ```bash
-    mvn exec:java -Dexec.mainClass=org.example.Main -Dexec.args=<AbsolutemPath to Test Files> 
+    mvn exec:java -Dexec.mainClass=org.example.Main -Dexec.args=<AbsolutePath to Test Files> 
    ```
 3. run unit tests:
    ```bash
@@ -36,7 +36,7 @@ To meet the "Production Grade" requirement for high-throughput, large-scale data
 - **Raw JDBC + HikariCP**: Avoided heavy ORMs (Hibernate) to eliminate overhead. Direct JDBC allows fine-grained control over batch sizes and transaction boundaries, which is critical for massive data ingestion. HikariCP is used for efficient connection pooling. (JdbcTemplate can be considered if run with Spring in the future)
 - **H2 (In-Memory/File)**:Used for the demo and unit tests to provide a "zero-dependency" experience while maintaining SQL compatibility
 
-# Future Improvemen (Q2)
+# Future Improvements (Q2)
 - Parallel input & output processing: Implement a Producer-Consumer pattern using a Disruptor or BlockingQueue to parallelize file reading, parsing, and DB writing.
 - Abstract InputReader: Support different load sources, including cloud storage (e.g., AWS S3/Azure Blob Storage) or ftp server
 - Advanced Observability: Write error report to a persistent storage instead of stderr, merging multiple error reports

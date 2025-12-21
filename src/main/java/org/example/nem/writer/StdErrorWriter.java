@@ -7,10 +7,10 @@ public class StdErrorWriter implements NEMErrorWriter {
 
     @Override
     public void writeErrors(ErrorRecord errorRecord) {
-        System.err.printf(String.format(ERROR_MSG_FORMAT,
+        System.err.printf(ERROR_MSG_FORMAT,
                 errorRecord.lineNumber(),
                 errorRecord.errorType().getCode(),
-                errorRecord.errorType().getMessage()));
+                errorRecord.errorType().getMessage());
     }
 
     @Override

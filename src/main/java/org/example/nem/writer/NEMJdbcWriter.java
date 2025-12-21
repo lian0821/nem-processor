@@ -4,6 +4,7 @@ import org.example.nem.data.MeterReading;
 
 import javax.sql.DataSource;
 import java.io.IOException;
+import java.sql.SQLException;
 import java.util.Collection;
 
 public class NEMJdbcWriter implements NEMWriter {
@@ -24,18 +25,23 @@ public class NEMJdbcWriter implements NEMWriter {
         try (var connection = dataSource.getConnection()) {
             connection.setAutoCommit(false);
             String sql = "INSERT INTO meter_readings (nmi, timestamp, consumption) VALUES (?, ?, ?)";
-            try (var preparedStatement = connection.prepareStatement(sql)) {
-                for (MeterReading reading : readings) {
-                    preparedStatement.setString(1, reading.nmi());
-                    preparedStatement.setObject(2, reading.timestamp());
-                    preparedStatement.setDouble(3, reading.value());
-                    preparedStatement.addBatch();
+            try {
+                try (var preparedStatement = connection.prepareStatement(sql)) {
+                    for (MeterReading reading : readings) {
+                        preparedStatement.setString(1, reading.nmi());
+                        preparedStatement.setObject(2, reading.timestamp());
+                        preparedStatement.setDouble(3, reading.value());
+                        preparedStatement.addBatch();
+                    }
+                    preparedStatement.executeBatch();
                 }
-                preparedStatement.executeBatch();
+                connection.commit();
+            } catch (SQLException e) {
+                connection.rollback();
+                throw e;
             }
-            connection.commit();
-        } catch (Exception e) {
-            throw new IOException("Error writing meter readings to database", e);
+        } catch (SQLException e) {
+            throw new IOException("Failed to write meter readings to database", e);
         }
     }
 }

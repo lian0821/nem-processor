@@ -41,8 +41,6 @@ public class NEMSqlWriter implements NEMWriter {
     @Override
     public void close() throws IOException {
         this.writer.flush();
-        if (this.writer != null) {
-            this.writer.close();
-        }
+        this.writer.close();
     }
 }
