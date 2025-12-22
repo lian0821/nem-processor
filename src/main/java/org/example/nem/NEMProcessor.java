@@ -86,11 +86,18 @@ public class NEMProcessor {
     public NEMProcessor() {
     }
 
-    public void process(String inputName, NEMProcessorFactory factor) throws IOException {
+    private CsvParserSettings createParserSettings() {
         CsvParserSettings settings = new CsvParserSettings();
         settings.getFormat().setLineSeparator("\n");
         settings.setIgnoreLeadingWhitespaces(true);
         settings.setIgnoreTrailingWhitespaces(true);
+        settings.setEmptyValue("");
+        settings.setNullValue("");
+        return settings;
+    }
+
+    public void process(String inputName, NEMProcessorFactory factor) throws IOException {
+        CsvParserSettings settings = createParserSettings();
         CsvParser parser = new CsvParser(settings);
         RuntimeState rs = new RuntimeState();
         rs.inputFileName = inputName;

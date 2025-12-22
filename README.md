@@ -24,7 +24,7 @@ A high-performance NEM12 (Meter Data File Format) parser designed for large-scal
    ```
 # Design Philosophy (Q3)
 To meet the "Production Grade" requirement for high-throughput, large-scale data ingestion, the system is built upon following considerations:
-1. **Massive Parallelism via Virtual Threads**: Leveraging Virtual Threads, the application processes multiple input files concurrently with minimal overhead. This ensures the system fully utilizes I/O bandwidth without the scaling bottlenecks of platform threads.
+1. **Massive Parallelism via Virtual Threads**: Leveraging Virtual Threads with semaphore-based rate limiting, the application processes multiple files concurrently without scaling bottlenecks. This maximizes I/O bandwidth while safely managing resource consumption.
 2. **Stream Processing for Memory Efficiency**: The application implements a strictly stream-oriented CSV reading strategy to maintain a constant memory footprint. On the output side, a MeterBufferWriter manages write-through batching, allowing adjustable multi-row SQL inserts to reduce database round-trips.
 3. **Pluggable & Extensible Architecture**: Adhering to the Dependency Inversion Principle, both data sinks (NEMWriter) and error reporters (NEMErrorWriter) are defined as interfaces. This allows the system to be easily extended or swapped for more advanced implementations (e.g., Kafka, or NoSQL stores) without modifying the current pipeline.
 4. **State-Aware Fault Isolation**: To ensure data integrity, it enforces strict contextual bounds: if a "200" (NMI Header) record fails validation, all dependent "300" (Interval) records are automatically invalidated until the next valid "200" record is encountered. 
