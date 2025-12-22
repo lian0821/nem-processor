@@ -51,6 +51,4 @@ class NEMJdbcWriterTest {
             return;
         }
     }
-
-
 }
