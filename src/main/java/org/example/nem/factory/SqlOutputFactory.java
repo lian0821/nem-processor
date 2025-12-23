@@ -1,9 +1,6 @@
 package org.example.nem.factory;
 
-import org.example.nem.writer.NEMErrorWriter;
-import org.example.nem.writer.NEMSqlWriter;
-import org.example.nem.writer.NEMWriter;
-import org.example.nem.writer.StdErrorWriter;
+import org.example.nem.writer.*;
 
 import java.io.BufferedWriter;
 import java.io.FileWriter;
@@ -23,5 +20,10 @@ public class SqlOutputFactory implements NEMProcessorFactory {
     @Override
     public NEMErrorWriter createNEMErrorWriter(String inputFile) {
         return new StdErrorWriter();
+    }
+
+    @Override
+    public NEMCheckpointWriter createNEMCheckpointWriter(String inputFile) {
+        return new NEMCheckpointFileWriter(inputFile + ".ckpt");
     }
 }

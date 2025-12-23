@@ -7,6 +7,7 @@ import org.example.nem.constant.ErrorType;
 import org.example.nem.data.ErrorRecord;
 import org.example.nem.data.MeterReading;
 import org.example.nem.factory.NEMProcessorFactory;
+import org.example.nem.writer.NEMCheckpointWriter;
 import org.example.nem.writer.NEMErrorWriter;
 import org.example.nem.writer.NEMWriter;
 
@@ -49,12 +50,17 @@ public class NEMProcessor {
     static class MeterBufferWriter {
         Collection<MeterReading> readings;
         NEMWriter writer;
+        NEMCheckpointWriter checkpointWriter;
+        RuntimeState rs;
         private int bufferSize;
 
-        public MeterBufferWriter(int bufferSize, NEMWriter writer) {
+
+        public MeterBufferWriter(int bufferSize, RuntimeState rs, NEMWriter writer, NEMCheckpointWriter checkpointWriter) {
             this.writer = writer;
             this.bufferSize = bufferSize;
             this.readings = new ArrayList<>();
+            this.checkpointWriter = checkpointWriter;
+            this.rs = rs;
         }
 
         public void add(Collection<MeterReading> newReadings) throws IOException {
@@ -62,13 +68,16 @@ public class NEMProcessor {
             if (readings.size() >= bufferSize) {
                 writer.write(readings);
                 readings.clear();
+                checkpointWriter.flushLineNumber(rs.currentLineCnt);
             }
         }
 
         public void flush() throws IOException {
             if (!readings.isEmpty()) {
                 writer.write(readings);
+                readings.clear();
             }
+            checkpointWriter.flushLineNumber(rs.currentLineCnt);
         }
     }
 
@@ -76,7 +85,7 @@ public class NEMProcessor {
         String nmi = "";
         int interval = 0;
         String inputFileName = "";
-        int currentLineCnt = 0;
+        long currentLineCnt = 0;
     }
 
     private static final int BATCH_SIZE = 200;
@@ -86,29 +95,32 @@ public class NEMProcessor {
     public NEMProcessor() {
     }
 
-    private CsvParserSettings createParserSettings() {
+    private CsvParserSettings createParserSettings(long skipRows) {
         CsvParserSettings settings = new CsvParserSettings();
         settings.getFormat().setLineSeparator("\n");
         settings.setIgnoreLeadingWhitespaces(true);
         settings.setIgnoreTrailingWhitespaces(true);
         settings.setEmptyValue("");
         settings.setNullValue("");
+        settings.setNumberOfRowsToSkip(skipRows);
         return settings;
     }
 
     public void process(String inputName, NEMProcessorFactory factor) throws IOException {
-        CsvParserSettings settings = createParserSettings();
-        CsvParser parser = new CsvParser(settings);
         RuntimeState rs = new RuntimeState();
         rs.inputFileName = inputName;
         rs.nmi = "";
         rs.interval = 0;
-        rs.currentLineCnt = 0;
+
         try (BufferedReader reader = new BufferedReader(new FileReader(inputName, StandardCharsets.UTF_8));
              NEMWriter outputWriter = factor.createNEMWriter(inputName);
-             NEMErrorWriter errorWriter = factor.createNEMErrorWriter(inputName)
+             NEMErrorWriter errorWriter = factor.createNEMErrorWriter(inputName);
+             NEMCheckpointWriter checkpointWriter = factor.createNEMCheckpointWriter(inputName);
         ) {
-            MeterBufferWriter valueBuffer = new MeterBufferWriter(BATCH_SIZE, outputWriter);
+            MeterBufferWriter valueBuffer = new MeterBufferWriter(BATCH_SIZE, rs, outputWriter, checkpointWriter);
+            rs.currentLineCnt = checkpointWriter.getStartingLineNumber();
+            CsvParserSettings settings = createParserSettings(rs.currentLineCnt);
+            CsvParser parser = new CsvParser(settings);
             parser.beginParsing(reader);
             String[] row;
             while (true) {
@@ -134,12 +146,12 @@ public class NEMProcessor {
                 }
             }
             valueBuffer.flush();
-        } finally {
-            try {
-                parser.stopParsing();
-            } catch (Exception ex) {
-                //ignore
-            }
+            parser.stopParsing();
+        } catch (IOException ex) {
+            String errMsg = String.format("Error processing file %s at line %d: %s",
+                    rs.inputFileName, rs.currentLineCnt, ex.getMessage());
+            System.err.println(errMsg);
+            throw ex;
         }
     }
 

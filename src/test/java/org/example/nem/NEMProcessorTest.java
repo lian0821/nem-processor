@@ -4,19 +4,18 @@ import org.example.nem.constant.ErrorType;
 import org.example.nem.data.ErrorRecord;
 import org.example.nem.data.MeterReading;
 import org.example.nem.factory.NEMProcessorFactory;
-import org.example.nem.writer.DBSupport;
-import org.example.nem.writer.NEMErrorWriter;
-import org.example.nem.writer.NEMJdbcWriter;
-import org.example.nem.writer.NEMWriter;
+import org.example.nem.writer.*;
 import org.junit.jupiter.api.Assertions;
 import org.junit.jupiter.api.Test;
 
 import javax.sql.DataSource;
+import java.io.File;
 import java.io.IOException;
 import java.sql.SQLException;
 import java.util.*;
 
 import static org.junit.jupiter.api.Assertions.fail;
+
 
 class NEMProcessorTest {
 
@@ -29,15 +28,10 @@ class NEMProcessorTest {
             fail("Failed to create table: " + e.getMessage());
         }
         NEMProcessor processor = new NEMProcessor();
-        NEMProcessorFactory factory = new NEMProcessorFactory() {
+        NEMProcessorFactory factory = new MockNEMProcessorFactory() {
             @Override
             public NEMWriter createNEMWriter(String inputFile) {
                 return new NEMJdbcWriter(ds);
-            }
-
-            @Override
-            public NEMErrorWriter createNEMErrorWriter(String inputFile) {
-                return new NEMErrorWriterMock();
             }
         };
         try {
@@ -45,6 +39,7 @@ class NEMProcessorTest {
         } catch (IOException e) {
             fail("IOException thrown during processing: " + e.getMessage());
         }
+
         List<MeterReading> readings;
         try {
             readings = DBSupport.fetchAllReadings(ds);
@@ -169,6 +164,11 @@ class NEMProcessorTest {
         public NEMErrorWriter createNEMErrorWriter(String inputFile) {
             return new NEMErrorWriterMock();
         }
+
+        @Override
+        public NEMCheckpointWriter createNEMCheckpointWriter(String inputFile) {
+            return new NEMCheckpointWriterMock();
+        }
     }
 
     static class NEMWriterMock implements NEMWriter {
@@ -200,4 +200,24 @@ class NEMProcessorTest {
 
         }
     }
+
+    static class NEMCheckpointWriterMock implements NEMCheckpointWriter {
+        private List<String> checkpoints = new ArrayList<>();
+
+        @Override
+        public long getStartingLineNumber() {
+            return checkpoints.isEmpty() ? 0 : Long.parseLong(checkpoints.get(checkpoints.size() - 1));
+        }
+
+        @Override
+        public void flushLineNumber(long lineNumber) {
+            checkpoints.add(String.valueOf(lineNumber));
+        }
+
+        @Override
+        public void close() throws IOException {
+            checkpoints.clear();
+        }
+    }
+
 }

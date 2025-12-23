@@ -16,7 +16,7 @@ public class DBSupport {
     public static DataSource createDataSource() {
         HikariConfig config = new HikariConfig();
         config.setDriverClassName("org.h2.Driver");
-        config.setJdbcUrl("jdbc:h2:mem:testdb;DB_CLOSE_DELAY=-1");  // in-memory database
+        config.setJdbcUrl("jdbc:h2:mem:testdb;DB_CLOSE_DELAY=-1;MODE=PostgreSQL");  // in-memory database
         config.setUsername("sa");
         config.setPassword("");
         return new HikariDataSource(config);
