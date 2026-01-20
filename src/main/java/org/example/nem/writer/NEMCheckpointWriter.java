@@ -1,10 +1,12 @@
 package org.example.nem.writer;
 
+import org.example.nem.data.RuntimeState;
+
 import java.io.Closeable;
 
 public interface NEMCheckpointWriter extends Closeable {
 
-    long getStartingLineNumber();
+    RuntimeState getStartingState();
 
-    void flushLineNumber(long lineNumber);
+    void flush(RuntimeState state);
 }
