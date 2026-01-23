@@ -2,7 +2,6 @@ package org.example.nem.factory;
 
 import org.example.nem.writer.*;
 
-import java.io.BufferedWriter;
 import java.io.FileWriter;
 
 public class SqlOutputFactory implements NEMProcessorFactory {
@@ -11,7 +10,7 @@ public class SqlOutputFactory implements NEMProcessorFactory {
     public NEMWriter createNEMWriter(String inputFile) {
         try {
             String outFileName = inputFile.replace(".csv", ".out.sql");
-            return new NEMSqlWriter(new BufferedWriter(new FileWriter(outFileName)));
+            return new NEMSqlWriter(new FileWriter(outFileName, true));
         } catch (Exception e) {
             throw new RuntimeException("Failed to create NEMSqlWriter for file: " + inputFile, e);
         }

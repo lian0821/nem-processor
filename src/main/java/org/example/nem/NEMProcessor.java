@@ -6,6 +6,7 @@ import com.univocity.parsers.csv.CsvParser;
 import org.example.nem.constant.ErrorType;
 import org.example.nem.data.ErrorRecord;
 import org.example.nem.data.MeterReading;
+import org.example.nem.data.RuntimeState;
 import org.example.nem.factory.NEMProcessorFactory;
 import org.example.nem.writer.NEMCheckpointWriter;
 import org.example.nem.writer.NEMErrorWriter;
@@ -68,7 +69,7 @@ public class NEMProcessor {
             if (readings.size() >= bufferSize) {
                 writer.write(readings);
                 readings.clear();
-                checkpointWriter.flushLineNumber(rs.currentLineCnt);
+                checkpointWriter.flush(rs);
             }
         }
 
@@ -77,16 +78,10 @@ public class NEMProcessor {
                 writer.write(readings);
                 readings.clear();
             }
-            checkpointWriter.flushLineNumber(rs.currentLineCnt);
+            checkpointWriter.flush(rs);
         }
     }
 
-    static class RuntimeState {
-        String nmi = "";
-        int interval = 0;
-        String inputFileName = "";
-        long currentLineCnt = 0;
-    }
 
     private static final int BATCH_SIZE = 200;
     private static final int ONE_DAY_MINUTES = 24 * 60;
@@ -109,16 +104,17 @@ public class NEMProcessor {
     public void process(String inputName, NEMProcessorFactory factor) throws IOException {
         RuntimeState rs = new RuntimeState();
         rs.inputFileName = inputName;
-        rs.nmi = "";
-        rs.interval = 0;
 
         try (BufferedReader reader = new BufferedReader(new FileReader(inputName, StandardCharsets.UTF_8));
              NEMWriter outputWriter = factor.createNEMWriter(inputName);
              NEMErrorWriter errorWriter = factor.createNEMErrorWriter(inputName);
              NEMCheckpointWriter checkpointWriter = factor.createNEMCheckpointWriter(inputName);
         ) {
+            RuntimeState lastRt = checkpointWriter.getStartingState();
+            rs.currentLineCnt = lastRt.currentLineCnt;
+            rs.nmi = lastRt.nmi;
+            rs.interval = lastRt.interval;
             MeterBufferWriter valueBuffer = new MeterBufferWriter(BATCH_SIZE, rs, outputWriter, checkpointWriter);
-            rs.currentLineCnt = checkpointWriter.getStartingLineNumber();
             CsvParserSettings settings = createParserSettings(rs.currentLineCnt);
             CsvParser parser = new CsvParser(settings);
             parser.beginParsing(reader);

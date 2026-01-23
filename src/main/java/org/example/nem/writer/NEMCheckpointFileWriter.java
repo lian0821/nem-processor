@@ -1,5 +1,7 @@
 package org.example.nem.writer;
 
+import org.example.nem.data.RuntimeState;
+
 import java.io.*;
 import java.nio.charset.StandardCharsets;
 import java.nio.file.Files;
@@ -25,13 +27,14 @@ public class NEMCheckpointFileWriter implements NEMCheckpointWriter {
     }
 
     @Override
-    public long getStartingLineNumber() {
+    public RuntimeState getStartingState() {
         File checkpointFile = new File(this.checkpointFilePath);
+        RuntimeState state = new RuntimeState();
         if (checkpointFile.exists()) {
             try (RandomAccessFile reader = new RandomAccessFile(checkpointFile, "r")) {
                 long length = reader.length();
                 if (length == 0) {
-                    return 0;
+                    return state;
                 }
                 long pointer = length - 1;
                 StringBuilder sb = new StringBuilder();
@@ -46,20 +49,20 @@ public class NEMCheckpointFileWriter implements NEMCheckpointWriter {
                     }
                     pointer--;
                 }
-                return Long.parseLong(sb.reverse().toString().trim());
+                return parseCheckpointLine(sb.reverse().toString().trim());
             } catch (IOException | NumberFormatException e) {
                 System.err.println("Error reading checkpoint file: " + e.getMessage());
                 throw new RuntimeException(e);
             }
         } else {
-            return 0;
+            return state;
         }
     }
 
     @Override
-    public void flushLineNumber(long lineNumber) {
+    public void flush(RuntimeState state) {
         try {
-            this.writer.write(String.valueOf(lineNumber));
+            this.writer.write(generateCheckpointLine(state));
             this.writer.write(System.lineSeparator());
             this.writer.flush();
         } catch (IOException e) {
@@ -77,5 +80,19 @@ public class NEMCheckpointFileWriter implements NEMCheckpointWriter {
                 throw new RuntimeException(e);
             }
         }
+    }
+
+    private String generateCheckpointLine(RuntimeState state) {
+        return String.format("%s,%d,%d", state.nmi, state.interval
+                , state.currentLineCnt);
+    }
+
+    private RuntimeState parseCheckpointLine(String line) {
+        String[] parts = line.split(",");
+        RuntimeState state = new RuntimeState();
+        state.nmi = parts[0];
+        state.interval = Integer.parseInt(parts[1]);
+        state.currentLineCnt = Long.parseLong(parts[2]);
+        return state;
     }
 }
